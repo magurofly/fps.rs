@@ -64,20 +64,21 @@ impl<T: ModIntBase> FPS<T> {
 impl<M: Modulus> FPS<StaticModInt<M>> {
   /// Inverse
   pub fn inv(&self) -> Self {
-    self.inv_n(self.len())
+    self.inv_at(self.len())
   }
 
-  /// First `n` coefficients of inverse
-  pub fn inv_n(&self, n: usize) -> Self {
+  /// 記号的ニュートン法により `1/self` の `n` 項目までを求める
+  /// 計算量 `O(n log n)`
+  pub fn inv_at(&self, n: usize) -> Self {
     assert!(self.at(0) != StaticModInt::from(0));
-    let mut ret = Self::new();
-    ret[0] = self[0].inv();
+    let mut g = Self::constant(self[0].inv());
     for i in 0 .. n.next_power_of_two().trailing_zeros() {
-      ret = &ret + &ret - &ret * &ret * self.pre(1 << (i + 1));
-      ret.a.truncate(1 << (i + 1));
+      g = &g + &g - &g * &g * self.pre(1 << (i + 1));
+      // g = &g * (Self::constant(2) - &g * self.pre(1 << (i + 1)));
+      g.a.truncate(1 << (i + 1));
     }
-    ret.a.truncate(n);
-    ret
+    g.a.truncate(n);
+    g
   }
 
   pub fn integral(&self) -> Self {
@@ -85,51 +86,51 @@ impl<M: Modulus> FPS<StaticModInt<M>> {
   }
 
   pub fn log(&self) -> Self {
-    self.log_n(self.len())
+    self.log_at(self.len())
   }
 
-  pub fn log_n(&self, n: usize) -> Self {
+  pub fn log_at(&self, n: usize) -> Self {
     assert!(self.at(0) == StaticModInt::from(1));
-    let mut ret = self.differential() * self.inv_n(n);
+    let mut ret = self.differential() * self.inv_at(n);
     ret.a.truncate(n - 1);
     ret.integral()
   }
 
   pub fn exp(&self) -> Self {
-    self.exp_n(self.len())
+    self.exp_at(self.len())
   }
 
-  pub fn exp_n(&self, n: usize) -> Self {
+  pub fn exp_at(&self, n: usize) -> Self {
     // バグってそう HELP!
     assert!(self.at(0) == StaticModInt::from(0));
-    let mut ret = Self::constant(1);
+    let mut g = Self::constant(1);
     for i in 0 .. n.next_power_of_two().trailing_zeros() {
-      ret = &ret * (self.pre(2 << i) + StaticModInt::from(1) - ret.log_n(2 << i));
-      ret.a.truncate(2 << i);
+      g = &g * (self.pre(2 << i) + StaticModInt::from(1) - g.log_at(2 << i));
+      g.a.truncate(2 << i);
     }
-    ret.a.truncate(n);
-    ret
+    g.a.truncate(n);
+    g
   }
 
   pub fn pow(&self, e: usize) -> Self {
-    self.pow_n(self.len(), e)
+    self.pow_at(self.len(), e)
   }
 
-  pub fn pow_n(&self, n: usize, e: usize) -> Self {
+  pub fn pow_at(&self, n: usize, e: usize) -> Self {
     if e == 0 {
       return Self::constant(1);
     }
 
     // f^e = exp(e * log(f)) を利用する
     // ただし、 log(f) をするには f[0] == 1 でないといけないので変形する
-    if let Some(first_nonzero) = (0 .. self.len()).find(|&i| self[i] != StaticModInt::from(0) ) {
-      let mut f = self >> first_nonzero;
+    if let Some(first_atonzero) = (0 .. self.len()).find(|&i| self[i] != StaticModInt::from(0) ) {
+      let mut f = self >> first_atonzero;
       f *= f[0].inv();
-      f = f.log_n(n);
+      f = f.log_at(n);
       f *= StaticModInt::from(e);
-      f = f.exp_n(n - first_nonzero);
+      f = f.exp_at(n - first_atonzero);
       f *= f[0].pow(e as u64);
-      f <<= first_nonzero * e;
+      f <<= first_atonzero * e;
       f
     } else {
       Self::new()
@@ -261,7 +262,7 @@ impl_op_from_assign!(mul:Mul from mul_assign:MulAssign for <T> (FPS<T>, T) where
 
 impl<M: Modulus> DivAssign<&Self> for FPS<StaticModInt<M>> {
   fn div_assign(&mut self, rhs: &Self) {
-    *self *= rhs.inv_n(self.len().max(rhs.len()));
+    *self *= rhs.inv_at(self.len().max(rhs.len()));
   }
 }
 impl_op_from_assign!(div:Div from div_assign:DivAssign for <M> (FPS<StaticModInt<M>>, FPS<StaticModInt<M>>) where M: Modulus);
